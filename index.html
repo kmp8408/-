@@ -111,13 +111,15 @@
       }
     }
 
-// クラウドへ最新データを送信（CORS制限を回避する形式）
+JavaScript
+    // クラウドへ最新データを送信（CORSエラーを完全に回避する設定）
     async function syncToCloud() {
       if (!GAS_API_URL || GAS_API_URL.includes("ここに")) return;
       setStatus("☁️ クラウドへ保存中...");
       try {
         await fetch(GAS_API_URL, {
           method: "POST",
+          mode: "no-cors", // ← Google側への送信を遮断させない必須設定
           headers: { "Content-Type": "text/plain" },
           body: JSON.stringify(events)
         });
