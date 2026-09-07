@@ -111,15 +111,14 @@
       }
     }
 
-    // クラウドへ最新データを送信
+// クラウドへ最新データを送信（CORS制限を回避する形式）
     async function syncToCloud() {
       if (!GAS_API_URL || GAS_API_URL.includes("ここに")) return;
       setStatus("☁️ クラウドへ保存中...");
       try {
         await fetch(GAS_API_URL, {
           method: "POST",
-          mode: "no-cors",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "text/plain" },
           body: JSON.stringify(events)
         });
         setStatus("✅ クラウド保存完了");
