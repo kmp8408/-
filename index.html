@@ -6,7 +6,8 @@
   <title>日数カウンター</title>
   <style>
     body { font-family: sans-serif; margin: 12px; background: #f8f9fa; color: #333; }
-    h2 { font-size: 1.1rem; margin-bottom: 12px; text-align: center; }
+    h2 { font-size: 1.1rem; margin-bottom: 8px; text-align: center; }
+    .sync-status { text-align: center; font-size: 0.75rem; color: #666; margin-bottom: 12px; }
     .form-box { background: #fff; padding: 12px; border-radius: 8px; border: 1px solid #ddd; margin-bottom: 12px; }
     .input-row { display: flex; gap: 8px; margin-bottom: 8px; }
     input, select, button { padding: 8px; font-size: 0.95rem; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
@@ -15,12 +16,10 @@
     select { flex: 1; }
     button.add-btn { width: 100%; background: #007bff; color: #fff; border: none; font-weight: bold; cursor: pointer; padding: 10px; border-radius: 4px; }
     
-    /* ソート選択エリア */
     .sort-box { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; padding: 0 4px; }
     .sort-label { font-size: 0.85rem; font-weight: bold; color: #555; }
     .sort-select { padding: 4px 8px; font-size: 0.85rem; border-radius: 4px; border: 1px solid #ccc; background: #fff; }
 
-    /* 一覧リスト */
     .list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 24px; }
     .item { display: flex; align-items: center; background: #fff; border-left: 6px solid #ccc; padding: 8px 10px; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
     .item-color-blue { border-left-color: #007bff; }
@@ -39,19 +38,12 @@
     .count-past { color: #dc3545; }
     .count-today { color: #28a745; }
     .del-btn { background: none; border: none; color: #aaa; font-size: 1.2rem; cursor: pointer; padding: 0 4px; line-height: 1; }
-
-    /* バックアップ・復元エリア */
-    .backup-box { background: #eee; padding: 10px; border-radius: 8px; font-size: 0.8rem; border: 1px solid #ccc; }
-    .backup-box summary { font-weight: bold; cursor: pointer; color: #555; }
-    .backup-content { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
-    textarea { width: 100%; height: 70px; font-family: monospace; font-size: 0.75rem; padding: 6px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
-    .btn-group { display: flex; gap: 6px; }
-    .btn-group button { flex: 1; background: #6c757d; color: #fff; border: none; padding: 6px; font-size: 0.8rem; border-radius: 4px; cursor: pointer; }
   </style>
 </head>
 <body>
 
   <h2>📅 日数カウンター</h2>
+  <div class="sync-status" id="syncStatus">🔄 クラウド同期中...</div>
 
   <div class="form-box">
     <div class="input-row">
@@ -86,26 +78,55 @@
 
   <div class="list" id="itemList"></div>
 
-  <!-- データ管理（エクスポート／インポート） -->
-  <details class="backup-box">
-    <summary>⚙️ データのバックアップ / パソコン編集</summary>
-    <div class="backup-content">
-      <textarea id="dataBox" placeholder="ここにデータが出力・入力されます"></textarea>
-      <div class="btn-group">
-        <button onclick="exportData()">書き出し (コピー)</button>
-        <button onclick="importData()">読み込み (反映)</button>
-      </div>
-    </div>
-  </details>
-
   <script>
+    // ★ここに取得したGASのURLを貼り付けてください
+    const GAS_API_URL = "https://script.google.com/macros/s/AKfycbyIpzEuH1_6Vv0JSk2lvYj_dn_-R2YDVeheRL3cHA3t_mGdu_vVqw4c1TnutY6HifRd8Q/exec";
+
     let events = JSON.parse(localStorage.getItem('kuta_events')) || [];
 
-    events.forEach(ev => {
-      if (!ev.id) ev.id = 'ev_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-      if (!ev.unitMode) ev.unitMode = 'days';
-    });
-    localStorage.setItem('kuta_events', JSON.stringify(events));
+    function setStatus(text) {
+      document.getElementById('syncStatus').innerText = text;
+    }
+
+    // クラウドから最新データを取得（同期）
+    async function syncFromCloud() {
+      if (!GAS_API_URL || GAS_API_URL.includes("ここに")) {
+        setStatus("⚠️ GASのURLが未設定です（ローカル保存中）");
+        render();
+        return;
+      }
+      setStatus("🔄 クラウドと同期中...");
+      try {
+        const res = await fetch(GAS_API_URL);
+        const cloudData = await res.json();
+        if (Array.isArray(cloudData)) {
+          events = cloudData;
+          localStorage.setItem('kuta_events', JSON.stringify(events));
+          setStatus("✅ クラウド同期完了");
+          render();
+        }
+      } catch (err) {
+        setStatus("⚠️ 同期オフライン（前回のデータを表示）");
+        render();
+      }
+    }
+
+    // クラウドへ最新データを送信
+    async function syncToCloud() {
+      if (!GAS_API_URL || GAS_API_URL.includes("ここに")) return;
+      setStatus("☁️ クラウドへ保存中...");
+      try {
+        await fetch(GAS_API_URL, {
+          method: "POST",
+          mode: "no-cors",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(events)
+        });
+        setStatus("✅ クラウド保存完了");
+      } catch (err) {
+        setStatus("⚠️ 保存失敗（端末内のみ保持）");
+      }
+    }
 
     function calculateYMD(d1, d2) {
       let start = d1 < d2 ? new Date(d1) : new Date(d2);
@@ -191,7 +212,7 @@
       });
     }
 
-    function addItem() {
+    async function addItem() {
       const title = document.getElementById('title').value;
       const date = document.getElementById('date').value;
       const color = document.getElementById('color').value;
@@ -209,65 +230,31 @@
       document.getElementById('title').value = '';
       document.getElementById('date').value = '';
       render();
+      await syncToCloud();
     }
 
-    function toggleUnit(id) {
+    async function toggleUnit(id) {
       const target = events.find(ev => ev.id === id);
       if (target) {
         target.unitMode = target.unitMode === 'ymd' ? 'days' : 'ymd';
         localStorage.setItem('kuta_events', JSON.stringify(events));
         render();
+        await syncToCloud();
       }
     }
 
-    function delItem(id) {
+    async function delItem(id) {
       if (confirm('削除しますか？')) {
         events = events.filter(ev => ev.id !== id);
         localStorage.setItem('kuta_events', JSON.stringify(events));
         render();
+        await syncToCloud();
       }
     }
 
-    // データのエクスポート
-    function exportData() {
-      const text = JSON.stringify(events, null, 2);
-      document.getElementById('dataBox').value = text;
-      navigator.clipboard.writeText(text).then(() => {
-        alert('データをクリップボードにコピーしました。PCのメモ帳等に貼り付けて保存・編集できます。');
-      }).catch(() => {
-        alert('テキストエリアに出力しました。コピーしてご利用ください。');
-      });
-    }
-
-    // データのインポート
-    function importData() {
-      const rawText = document.getElementById('dataBox').value.trim();
-      if (!rawText) {
-        alert('貼り付け枠にデータが入力されていません');
-        return;
-      }
-      try {
-        const parsed = JSON.parse(rawText);
-        if (!Array.isArray(parsed)) throw new Error();
-        
-        parsed.forEach(ev => {
-          if (!ev.id) ev.id = 'ev_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-          if (!ev.unitMode) ev.unitMode = 'days';
-          if (!ev.color) ev.color = 'blue';
-        });
-
-        if (confirm(`現在のデータに上書きして ${parsed.length} 件のレコードを読み込みますか？`)) {
-          events = parsed;
-          localStorage.setItem('kuta_events', JSON.stringify(events));
-          render();
-          alert('読み込みが完了しました！');
-        }
-      } catch (e) {
-        alert('データの形式が正しくありません。正しいJSONデータを貼り付けてください。');
-      }
-    }
-
+    // 初回読み込み時はまず端末データを描画し、すぐにクラウドから最新データを取得
     render();
+    syncFromCloud();
   </script>
 </body>
 </html>
