@@ -9,29 +9,31 @@
     h2 { font-size: 1.1rem; margin-bottom: 12px; text-align: center; }
     .form-box { background: #fff; padding: 12px; border-radius: 8px; border: 1px solid #ddd; margin-bottom: 16px; }
     .input-row { display: flex; gap: 8px; margin-bottom: 8px; }
-    input, select, button { padding: 8px; font-size: 0.95rem; border: 1px solid #ccc; border-radius: 4px; }
+    input, select, button { padding: 8px; font-size: 0.95rem; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
     input[type="text"] { flex: 2; }
     input[type="date"] { flex: 2; }
     select { flex: 1; }
-    button.add-btn { width: 100%; background: #007bff; color: #fff; border: none; font-weight: bold; cursor: pointer; }
+    button.add-btn { width: 100%; background: #007bff; color: #fff; border: none; font-weight: bold; cursor: pointer; padding: 10px; border-radius: 4px; }
     
-    /* 一覧リストの装飾（無駄を省いた1行コンパクト表示） */
     .list { display: flex; flex-direction: column; gap: 6px; }
     .item { display: flex; align-items: center; background: #fff; border-left: 6px solid #ccc; padding: 8px 10px; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
-    .item-color-red { border-left-color: #e63946; }
-    .item-color-blue { border-left-color: #1d3557; }
-    .item-color-green { border-left-color: #2a9d8f; }
-    .item-color-orange { border-left-color: #f4a261; }
-    .item-color-purple { border-left-color: #8338ec; }
+    .item-color-blue { border-left-color: #007bff; }
+    .item-color-red { border-left-color: #dc3545; }
+    .item-color-green { border-left-color: #28a745; }
+    .item-color-orange { border-left-color: #fd7e14; }
+    .item-color-purple { border-left-color: #6f42c1; }
 
     .item-main { flex: 1; overflow: hidden; }
     .item-title { font-weight: bold; font-size: 0.95rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .item-date { font-size: 0.75rem; color: #666; }
-    .item-count { font-size: 1rem; font-weight: bold; padding: 0 8px; text-align: right; }
+    
+    /* 日数表示部分（タップで切り替え可能） */
+    .item-count { font-size: 0.95rem; font-weight: bold; padding: 4px 8px; text-align: right; cursor: pointer; user-select: none; border-radius: 4px; }
+    .item-count:active { background: #eee; }
     .count-future { color: #007bff; }
-    .count-past { color: #e63946; }
+    .count-past { color: #dc3545; }
     .count-today { color: #28a745; }
-    .del-btn { background: none; border: none; color: #aaa; font-size: 1.1rem; cursor: pointer; padding: 0 4px; }
+    .del-btn { background: none; border: none; color: #aaa; font-size: 1.2rem; cursor: pointer; padding: 0 4px; line-height: 1; }
   </style>
 </head>
 <body>
@@ -40,7 +42,7 @@
 
   <div class="form-box">
     <div class="input-row">
-      <input type="text" id="title" placeholder="イベント名（例：誕生日）">
+      <input type="text" id="title" placeholder="イベント名">
       <select id="color">
         <option value="blue">青</option>
         <option value="red">赤</option>
@@ -51,6 +53,10 @@
     </div>
     <div class="input-row">
       <input type="date" id="date">
+      <select id="unitMode">
+        <option value="days">日数のみ</option>
+        <option value="ymd">年月日時</option>
+      </select>
     </div>
     <button class="add-btn" onclick="addItem()">追加する</button>
   </div>
@@ -59,6 +65,32 @@
 
   <script>
     let events = JSON.parse(localStorage.getItem('kuta_events')) || [];
+
+    // 年月日の差分を精密計算する関数
+    function calculateYMD(d1, d2) {
+      let start = d1 < d2 ? new Date(d1) : new Date(d2);
+      let end = d1 < d2 ? new Date(d2) : new Date(d1);
+
+      let years = end.getFullYear() - start.getFullYear();
+      let months = end.getMonth() - start.getMonth();
+      let days = end.getDate() - start.getDate();
+
+      if (days < 0) {
+        months--;
+        let prevMonthLastDay = new Date(end.getFullYear(), end.getMonth(), 0).getDate();
+        days += prevMonthLastDay;
+      }
+      if (months < 0) {
+        years--;
+        months += 12;
+      }
+
+      let parts = [];
+      if (years > 0) parts.push(`${years}年`);
+      if (months > 0) parts.push(`${months}ヶ月`);
+      if (days > 0 || parts.length === 0) parts.push(`${days}日`);
+      return parts.join('');
+    }
 
     function saveAndRender() {
       localStorage.setItem('kuta_events', JSON.stringify(events));
@@ -69,21 +101,32 @@
       today.setHours(0, 0, 0, 0);
 
       events.forEach((ev, index) => {
-        const targetDate = new Date(ev.date);
+        // unitModeの初期値互換（未設定ならdays）
+        if (!ev.unitMode) ev.unitMode = 'days';
+
+        const [y, m, d] = ev.date.split('-').map(Number);
+        const targetDate = new Date(y, m - 1, d);
         targetDate.setHours(0, 0, 0, 0);
+
         const diffDays = Math.round((targetDate - today) / (1000 * 60 * 60 * 24));
 
         let diffText = '';
         let diffClass = '';
-        if (diffDays > 0) {
-          diffText = `あと ${diffDays} 日`;
-          diffClass = 'count-future';
-        } else if (diffDays < 0) {
-          diffText = `あれから ${Math.abs(diffDays)} 日`;
-          diffClass = 'count-past';
-        } else {
+
+        if (diffDays === 0) {
           diffText = '今日！';
           diffClass = 'count-today';
+        } else {
+          const isFuture = diffDays > 0;
+          diffClass = isFuture ? 'count-future' : 'count-past';
+          const prefix = isFuture ? 'あと ' : 'あれから ';
+
+          if (ev.unitMode === 'ymd') {
+            const ymdStr = calculateYMD(today, targetDate);
+            diffText = `${prefix}${ymdStr}`;
+          } else {
+            diffText = `${prefix}${Math.abs(diffDays)} 日`;
+          }
         }
 
         const div = document.createElement('div');
@@ -93,7 +136,9 @@
             <div class="item-title">${ev.title}</div>
             <div class="item-date">${ev.date}</div>
           </div>
-          <div class="item-count ${diffClass}">${diffText}</div>
+          <div class="item-count ${diffClass}" title="タップで表示形式切り替え" onclick="toggleUnit(${index})">
+            ${diffText}
+          </div>
           <button class="del-btn" onclick="delItem(${index})">×</button>
         `;
         listEl.appendChild(div);
@@ -104,14 +149,22 @@
       const title = document.getElementById('title').value;
       const date = document.getElementById('date').value;
       const color = document.getElementById('color').value;
+      const unitMode = document.getElementById('unitMode').value;
 
       if (!title || !date) {
         alert('タイトルと日付を入力してください');
         return;
       }
 
-      events.push({ title, date, color });
+      events.push({ title, date, color, unitMode });
       document.getElementById('title').value = '';
+      document.getElementById('date').value = '';
+      saveAndRender();
+    }
+
+    // 表示単位の切り替え
+    function toggleUnit(index) {
+      events[index].unitMode = events[index].unitMode === 'ymd' ? 'days' : 'ymd';
       saveAndRender();
     }
 
