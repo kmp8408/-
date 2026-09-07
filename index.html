@@ -88,23 +88,21 @@
       document.getElementById('syncStatus').innerText = text;
     }
 
-// クラウドから最新データを取得（Google特有のリダイレクトを確実に処理する設定）
-    async function syncFromCloud() {
+// クラウドから最新データを取得（CORS制限を100%回避するJSONP方式）
+    function syncFromCloud() {
       if (!GAS_API_URL || GAS_API_URL.includes("ここに")) {
         setStatus("⚠️ GASのURLが未設定です（ローカル保存中）");
         render();
         return;
       }
       setStatus("🔄 クラウドと同期中...");
-      try {
-        const res = await fetch(GAS_API_URL, {
-          method: "GET",
-          redirect: "follow" // ← Google Apps Scriptのリダイレクトを自動追従させる設定
-        });
-        
-        if (!res.ok) throw new Error("HTTP " + res.status);
-        
-        const cloudData = await res.json();
+
+      // 既存の古いタグがあれば削除
+      const oldScript = document.getElementById('gas-jsonp');
+      if (oldScript) oldScript.remove();
+
+      // グローバルコールバック関数の定義
+      window.handleGasResponse = function(cloudData) {
         if (Array.isArray(cloudData)) {
           events = cloudData;
           localStorage.setItem('kuta_events', JSON.stringify(events));
@@ -114,11 +112,17 @@
           setStatus("⚠️ データ形式エラー");
           render();
         }
-      } catch (err) {
-        console.error(err);
+      };
+
+      // scriptタグを動的に生成して通信（ブラウザのCORS遮断を回避）
+      const script = document.createElement('script');
+      script.id = 'gas-jsonp';
+      script.src = `${GAS_API_URL}?callback=handleGasResponse&t=${Date.now()}`;
+      script.onerror = function() {
         setStatus("⚠️ 同期オフライン（ローカルデータを表示）");
-        render(); // エラー時も固まらずにローカルデータを描画
-      }
+        render();
+      };
+      document.body.appendChild(script);
     }
 
 JavaScript
