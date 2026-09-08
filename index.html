@@ -91,7 +91,6 @@
 
   <div class="list" id="itemList"></div>
 
-  <!-- CSV入出力エリア -->
   <details class="backup-box">
     <summary>📊 Excel / CSV 入出力（パソコン編集）</summary>
     <div class="backup-content">
@@ -101,8 +100,8 @@
         <input type="file" id="csvFileInput" accept=".csv" onchange="importCSV(event)">
       </div>
       <p class="csv-note">
-        ※新規登録時は <code>id</code> を空欄にして構いません（自動採番されます）。<br>
-        ※日付は <code>2024/5/3</code>、<code>2024-05-03</code>、<code>2024年5月3日</code> に対応。<br>
+        ※新規行は <code>id</code> を空欄でOKです（自動採番）。<br>
+        ※日付は <code>2025/5/17</code>、<code>2025-05-17</code>、<code>2025年5月17日</code> に対応。<br>
         ※列構成：<code>id, title, date, color, unitMode</code>（ヘッダー行含む）
       </p>
     </div>
@@ -117,7 +116,6 @@
       document.getElementById('syncStatus').innerText = text;
     }
 
-    // 重複のない一意のIDを生成する関数
     function generateId() {
       return 'ev_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9);
     }
@@ -147,6 +145,32 @@
       const m = ('0' + (d.getMonth() + 1)).slice(-2);
       const day = ('0' + d.getDate()).slice(-2);
       return `${y}-${m}-${day}`;
+    }
+
+    // カンマ区切り行を確実に5分割する精密パーサー（空欄セルを絶対にスキップしない）
+    function parseCSVLine(text) {
+      const result = [];
+      let cur = '';
+      let inQuotes = false;
+      for (let i = 0; i < text.length; i++) {
+        const c = text[i];
+        const next = text[i + 1];
+        if (c === '"') {
+          if (inQuotes && next === '"') {
+            cur += '"';
+            i++;
+          } else {
+            inQuotes = !inQuotes;
+          }
+        } else if (c === ',' && !inQuotes) {
+          result.push(cur.trim());
+          cur = '';
+        } else {
+          cur += c;
+        }
+      }
+      result.push(cur.trim());
+      return result;
     }
 
     function syncFromCloud() {
@@ -359,7 +383,7 @@
       URL.revokeObjectURL(url);
     }
 
-    // CSVインポート（id空欄時の自動採番に対応）
+    // CSVインポート（列ズレを完全防止する安全仕様）
     function importCSV(event) {
       const file = event.target.files[0];
       if (!file) return;
@@ -376,25 +400,20 @@
 
         const newEvents = [];
         for (let i = 1; i < lines.length; i++) {
-          const cols = lines[i].match(/(".*?"|[^",]+)(?=\s*,|\s*$)/g) || [];
-          const cleanCols = cols.map(col => col.replace(/^"|"$/g, '').replace(/""/g, '"').trim());
+          const cols = parseCSVLine(lines[i]);
 
-          // タイトルと日付が存在する行を対象とする
-          if (cleanCols.length >= 2) {
-            const rawId = cleanCols[0] ? cleanCols[0].trim() : '';
-            // idが空文字の場合は自動採番
-            const finalId = rawId !== '' ? rawId : generateId();
-            
-            const title = cleanCols[1] || '無題';
-            const dateStr = cleanCols[2] || '';
-            const parsedDate = formatDateToStandard(dateStr);
-            const color = cleanCols[3] || 'blue';
-            const unitMode = cleanCols[4] || 'days';
+          // タイトル（2列目）と日付（3列目）を確実にインデックス指定で取得
+          if (cols.length >= 2) {
+            const rawId = cols[0] || '';
+            const title = cols[1] || '無題';
+            const dateStr = cols[2] || '';
+            const color = cols[3] || 'blue';
+            const unitMode = cols[4] || 'days';
 
             newEvents.push({
-              id: finalId,
+              id: rawId !== '' ? rawId : generateId(),
               title: title,
-              date: parsedDate,
+              date: formatDateToStandard(dateStr),
               color: color,
               unitMode: unitMode
             });
