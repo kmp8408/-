@@ -8,20 +8,23 @@
     body { font-family: sans-serif; margin: 12px; background: #f8f9fa; color: #333; }
     h2 { font-size: 1.1rem; margin-bottom: 8px; text-align: center; }
     .sync-status { text-align: center; font-size: 0.75rem; color: #666; margin-bottom: 12px; }
-    .form-box { background: #fff; padding: 12px; border-radius: 8px; border: 1px solid #ddd; margin-bottom: 12px; }
+    .form-box { background: #fff; padding: 12px; border-radius: 8px; border: 1px solid #ddd; margin-bottom: 12px; transition: border-color 0.2s; }
+    .form-box.editing { border: 2px solid #ffc107; background: #fffdf5; }
     .input-row { display: flex; gap: 8px; margin-bottom: 8px; }
     input, select, button { padding: 8px; font-size: 0.95rem; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
     input[type="text"] { flex: 2; }
     input[type="date"] { flex: 2; }
     select { flex: 1; }
-    button.add-btn { width: 100%; background: #007bff; color: #fff; border: none; font-weight: bold; cursor: pointer; padding: 10px; border-radius: 4px; }
+    .btn-row { display: flex; gap: 8px; }
+    button.add-btn { flex: 1; background: #007bff; color: #fff; border: none; font-weight: bold; cursor: pointer; padding: 10px; border-radius: 4px; }
+    button.cancel-btn { background: #6c757d; color: #fff; border: none; font-weight: bold; cursor: pointer; padding: 10px 16px; border-radius: 4px; display: none; }
     
     .sort-box { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; padding: 0 4px; }
     .sort-label { font-size: 0.85rem; font-weight: bold; color: #555; }
     .sort-select { padding: 4px 8px; font-size: 0.85rem; border-radius: 4px; border: 1px solid #ccc; background: #fff; }
 
     .list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 24px; }
-    .item { display: flex; align-items: center; background: #fff; border-left: 6px solid #ccc; padding: 8px 10px; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+    .item { display: flex; align-items: center; background: #fff; border-left: 6px solid #ccc; padding: 8px 10px; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); gap: 6px; }
     .item-color-blue { border-left-color: #007bff; }
     .item-color-red { border-left-color: #dc3545; }
     .item-color-green { border-left-color: #28a745; }
@@ -32,12 +35,15 @@
     .item-title { font-weight: bold; font-size: 0.95rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .item-date { font-size: 0.75rem; color: #666; }
     
-    .item-count { font-size: 0.95rem; font-weight: bold; padding: 4px 8px; text-align: right; cursor: pointer; user-select: none; border-radius: 4px; }
+    .item-count { font-size: 0.95rem; font-weight: bold; padding: 4px 6px; text-align: right; cursor: pointer; user-select: none; border-radius: 4px; white-space: nowrap; }
     .item-count:active { background: #eee; }
     .count-future { color: #007bff; }
     .count-past { color: #dc3545; }
     .count-today { color: #28a745; }
-    .del-btn { background: none; border: none; color: #aaa; font-size: 1.2rem; cursor: pointer; padding: 0 4px; line-height: 1; }
+    
+    .icon-btn { background: none; border: none; cursor: pointer; padding: 4px; line-height: 1; font-size: 1rem; opacity: 0.6; transition: opacity 0.2s; }
+    .icon-btn:hover { opacity: 1; }
+    .del-btn { color: #dc3545; font-size: 1.2rem; }
 
     /* CSV管理エリア */
     .backup-box { background: #eee; padding: 12px; border-radius: 8px; font-size: 0.85rem; border: 1px solid #ccc; }
@@ -58,7 +64,9 @@
   <h2>📅 日数管理くん</h2>
   <div class="sync-status" id="syncStatus">🔄 クラウド同期中...</div>
 
-  <div class="form-box">
+  <!-- 入力・編集フォーム -->
+  <div class="form-box" id="formBox">
+    <input type="hidden" id="editId" value="">
     <div class="input-row">
       <input type="text" id="title" placeholder="イベント名">
       <select id="color">
@@ -76,11 +84,16 @@
         <option value="ymd">年月日時</option>
       </select>
     </div>
-    <button class="add-btn" onclick="addItem()">追加する</button>
+    <div class="btn-row">
+      <button class="add-btn" id="submitBtn" onclick="saveItem()">追加する</button>
+      <button class="cancel-btn" id="cancelBtn" onclick="cancelEdit()">キャンセル</button>
+    </div>
   </div>
 
-  <!-- ソート選択エリア（今日から近い順／カラー順を追加） -->
-<select id="sortType" class="sort-select" onchange="render()">
+  <!-- ソート選択エリア（初期値：日付順 未来→過去） -->
+  <div class="sort-box">
+    <span class="sort-label">並び替え</span>
+    <select id="sortType" class="sort-select" onchange="render()">
       <option value="default">登録順</option>
       <option value="diff-asc">今日から近い順 (残り日数が少ない)</option>
       <option value="diff-desc">今日から遠い順 (残り日数が遠い)</option>
@@ -89,6 +102,7 @@
       <option value="color-asc">カラー順 (青/赤/緑/橙/紫)</option>
       <option value="name-asc">イベント名順 (あ-ん)</option>
     </select>
+  </div>
 
   <div class="list" id="itemList"></div>
 
@@ -260,37 +274,18 @@
 
       let displayEvents = [...events];
       const sortType = document.getElementById('sortType').value;
-
-      // カラー順用の優先度マップ
       const colorOrder = { 'blue': 1, 'red': 2, 'green': 3, 'orange': 4, 'purple': 5 };
 
       if (sortType === 'diff-asc') {
-        // 今日から近い順（絶対日数差が小さい順: 0日 ➔ 1日 ➔ 10日...）
-        displayEvents.sort((a, b) => {
-          const diffA = Math.abs(parseDateSafe(a.date) - today);
-          const diffB = Math.abs(parseDateSafe(b.date) - today);
-          return diffA - diffB;
-        });
+        displayEvents.sort((a, b) => Math.abs(parseDateSafe(a.date) - today) - Math.abs(parseDateSafe(b.date) - today));
       } else if (sortType === 'diff-desc') {
-        // 今日から遠い順（絶対日数差が大きい順: 大昔や遥か先がトップ）
-        displayEvents.sort((a, b) => {
-          const diffA = Math.abs(parseDateSafe(a.date) - today);
-          const diffB = Math.abs(parseDateSafe(b.date) - today);
-          return diffB - diffA;
-        });
+        displayEvents.sort((a, b) => Math.abs(parseDateSafe(b.date) - today) - Math.abs(parseDateSafe(a.date) - today));
       } else if (sortType === 'date-asc') {
-        // カレンダー順（過去から未来へ）
         displayEvents.sort((a, b) => parseDateSafe(a.date) - parseDateSafe(b.date));
       } else if (sortType === 'date-desc') {
-        // カレンダー順（未来から過去へ）
         displayEvents.sort((a, b) => parseDateSafe(b.date) - parseDateSafe(a.date));
       } else if (sortType === 'color-asc') {
-        // カラー順（青 ➔ 赤 ➔ 緑 ➔ 橙 ➔ 紫）
-        displayEvents.sort((a, b) => {
-          const orderA = colorOrder[a.color] || 99;
-          const orderB = colorOrder[b.color] || 99;
-          return orderA - orderB;
-        });
+        displayEvents.sort((a, b) => (colorOrder[a.color] || 99) - (colorOrder[b.color] || 99));
       } else if (sortType === 'name-asc') {
         displayEvents.sort((a, b) => a.title.localeCompare(b.title, 'ja'));
       }
@@ -328,17 +323,20 @@
             <div class="item-title">${ev.title}</div>
             <div class="item-date">${displayDateStr}</div>
           </div>
-          <div class="item-count ${diffClass}" title="タップで切り替え" onclick="toggleUnit('${ev.id}')">
+          <div class="item-count ${diffClass}" title="タップで表示単位切替" onclick="toggleUnit('${ev.id}')">
             ${diffText}
           </div>
-          <button class="del-btn" onclick="delItem('${ev.id}')">×</button>
+          <button class="icon-btn edit-btn" title="編集" onclick="startEdit('${ev.id}')">✏️</button>
+          <button class="icon-btn del-btn" title="削除" onclick="delItem('${ev.id}')">×</button>
         `;
         listEl.appendChild(div);
       });
     }
 
-    async function addItem() {
-      const title = document.getElementById('title').value;
+    // 新規登録＆編集保存の兼用関数
+    async function saveItem() {
+      const editId = document.getElementById('editId').value;
+      const title = document.getElementById('title').value.trim();
       const date = document.getElementById('date').value;
       const color = document.getElementById('color').value;
       const unitMode = document.getElementById('unitMode').value;
@@ -348,14 +346,60 @@
         return;
       }
 
-      const id = generateId();
-      events.push({ id, title, date: formatDateToStandard(date), color, unitMode });
-      localStorage.setItem('kuta_events', JSON.stringify(events));
+      if (editId) {
+        // 既存レコードの更新
+        const target = events.find(ev => ev.id === editId);
+        if (target) {
+          target.title = title;
+          target.date = formatDateToStandard(date);
+          target.color = color;
+          target.unitMode = unitMode;
+        }
+      } else {
+        // 新規登録
+        const id = generateId();
+        events.push({ id, title, date: formatDateToStandard(date), color, unitMode });
+      }
 
-      document.getElementById('title').value = '';
-      document.getElementById('date').value = '';
+      localStorage.setItem('kuta_events', JSON.stringify(events));
+      cancelEdit(); // フォームを初期状態に戻す
       render();
       await syncToCloud();
+    }
+
+    // 編集モード開始
+    function startEdit(id) {
+      const target = events.find(ev => ev.id === id);
+      if (!target) return;
+
+      document.getElementById('editId').value = target.id;
+      document.getElementById('title').value = target.title;
+      document.getElementById('date').value = formatDateToStandard(target.date);
+      document.getElementById('color').value = target.color || 'blue';
+      document.getElementById('unitMode').value = target.unitMode || 'days';
+
+      // ボタンと枠線の表示切替
+      document.getElementById('submitBtn').innerText = '更新する';
+      document.getElementById('submitBtn').style.background = '#28a745';
+      document.getElementById('cancelBtn').style.display = 'block';
+      document.getElementById('formBox').classList.add('editing');
+
+      // 画面上部のフォームへスムーズにスクロール
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    // 編集キャンセル・フォーム初期化
+    function cancelEdit() {
+      document.getElementById('editId').value = '';
+      document.getElementById('title').value = '';
+      document.getElementById('date').value = '';
+      document.getElementById('color').value = 'blue';
+      document.getElementById('unitMode').value = 'days';
+
+      document.getElementById('submitBtn').innerText = '追加する';
+      document.getElementById('submitBtn').style.background = '#007bff';
+      document.getElementById('cancelBtn').style.display = 'none';
+      document.getElementById('formBox').classList.remove('editing');
     }
 
     async function toggleUnit(id) {
@@ -372,6 +416,9 @@
       if (confirm('削除しますか？')) {
         events = events.filter(ev => ev.id !== id);
         localStorage.setItem('kuta_events', JSON.stringify(events));
+        if (document.getElementById('editId').value === id) {
+          cancelEdit();
+        }
         render();
         await syncToCloud();
       }
@@ -402,7 +449,7 @@
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `days_counter_${new Date().toISOString().slice(0,10)}.csv`;
+      a.download = `days_kanri_${new Date().toISOString().slice(0,10)}.csv`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
