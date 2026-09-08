@@ -79,12 +79,16 @@
     <button class="add-btn" onclick="addItem()">追加する</button>
   </div>
 
+  <!-- ソート選択エリア（今日から近い順／カラー順を追加） -->
   <div class="sort-box">
     <span class="sort-label">並び替え</span>
     <select id="sortType" class="sort-select" onchange="render()">
       <option value="default">登録順</option>
-      <option value="days-asc">日付が近い順 (昇順)</option>
-      <option value="days-desc">日付が遠い順 (降順)</option>
+      <option value="diff-asc">今日から近い順 (残り日数が少ない)</option>
+      <option value="diff-desc">今日から遠い順 (残り日数が遠い)</option>
+      <option value="date-asc">日付順 (過去 ➔ 未来)</option>
+      <option value="date-desc">日付順 (未来 ➔ 過去)</option>
+      <option value="color-asc">カラー順 (青/赤/緑/橙/紫)</option>
       <option value="name-asc">イベント名順 (あ-ん)</option>
     </select>
   </div>
@@ -147,7 +151,6 @@
       return `${y}-${m}-${day}`;
     }
 
-    // カンマ区切り行を確実に5分割する精密パーサー（空欄セルを絶対にスキップしない）
     function parseCSVLine(text) {
       const result = [];
       let cur = '';
@@ -261,10 +264,36 @@
       let displayEvents = [...events];
       const sortType = document.getElementById('sortType').value;
 
-      if (sortType === 'days-asc') {
+      // カラー順用の優先度マップ
+      const colorOrder = { 'blue': 1, 'red': 2, 'green': 3, 'orange': 4, 'purple': 5 };
+
+      if (sortType === 'diff-asc') {
+        // 今日から近い順（絶対日数差が小さい順: 0日 ➔ 1日 ➔ 10日...）
+        displayEvents.sort((a, b) => {
+          const diffA = Math.abs(parseDateSafe(a.date) - today);
+          const diffB = Math.abs(parseDateSafe(b.date) - today);
+          return diffA - diffB;
+        });
+      } else if (sortType === 'diff-desc') {
+        // 今日から遠い順（絶対日数差が大きい順: 大昔や遥か先がトップ）
+        displayEvents.sort((a, b) => {
+          const diffA = Math.abs(parseDateSafe(a.date) - today);
+          const diffB = Math.abs(parseDateSafe(b.date) - today);
+          return diffB - diffA;
+        });
+      } else if (sortType === 'date-asc') {
+        // カレンダー順（過去から未来へ）
         displayEvents.sort((a, b) => parseDateSafe(a.date) - parseDateSafe(b.date));
-      } else if (sortType === 'days-desc') {
+      } else if (sortType === 'date-desc') {
+        // カレンダー順（未来から過去へ）
         displayEvents.sort((a, b) => parseDateSafe(b.date) - parseDateSafe(a.date));
+      } else if (sortType === 'color-asc') {
+        // カラー順（青 ➔ 赤 ➔ 緑 ➔ 橙 ➔ 紫）
+        displayEvents.sort((a, b) => {
+          const orderA = colorOrder[a.color] || 99;
+          const orderB = colorOrder[b.color] || 99;
+          return orderA - orderB;
+        });
       } else if (sortType === 'name-asc') {
         displayEvents.sort((a, b) => a.title.localeCompare(b.title, 'ja'));
       }
@@ -383,7 +412,6 @@
       URL.revokeObjectURL(url);
     }
 
-    // CSVインポート（列ズレを完全防止する安全仕様）
     function importCSV(event) {
       const file = event.target.files[0];
       if (!file) return;
@@ -402,7 +430,6 @@
         for (let i = 1; i < lines.length; i++) {
           const cols = parseCSVLine(lines[i]);
 
-          // タイトル（2列目）と日付（3列目）を確実にインデックス指定で取得
           if (cols.length >= 2) {
             const rawId = cols[0] || '';
             const title = cols[1] || '無題';
