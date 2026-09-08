@@ -101,7 +101,8 @@
         <input type="file" id="csvFileInput" accept=".csv" onchange="importCSV(event)">
       </div>
       <p class="csv-note">
-        ※日付は <code>2024/5/3</code>、<code>2024-05-03</code>、<code>2024年5月3日</code> いずれの表記でも自動認識されます。<br>
+        ※新規登録時は <code>id</code> を空欄にして構いません（自動採番されます）。<br>
+        ※日付は <code>2024/5/3</code>、<code>2024-05-03</code>、<code>2024年5月3日</code> に対応。<br>
         ※列構成：<code>id, title, date, color, unitMode</code>（ヘッダー行含む）
       </p>
     </div>
@@ -116,18 +117,20 @@
       document.getElementById('syncStatus').innerText = text;
     }
 
-    // 日本語（年月日）、スラッシュ（YYYY/M/D）、英語長文などをすべて標準のDateへ変換する関数
+    // 重複のない一意のIDを生成する関数
+    function generateId() {
+      return 'ev_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9);
+    }
+
     function parseDateSafe(val) {
       if (!val) return new Date();
 
       if (typeof val === 'string') {
         let clean = val.trim();
-        // 「2024年5月3日」形式の処理
         if (/^\d{4}年\d{1,2}月\d{1,2}日?$/.test(clean)) {
           const parts = clean.replace(/日$/, '').split(/[年月]/).map(Number);
           return new Date(parts[0], parts[1] - 1, parts[2]);
         }
-        // 「2024/5/3」または「2024-5-3」形式の処理
         if (/^\d{4}[\/\-]\d{1,2}[\/\-]\d{1,2}$/.test(clean)) {
           const parts = clean.split(/[\/\-]/).map(Number);
           return new Date(parts[0], parts[1] - 1, parts[2]);
@@ -138,7 +141,6 @@
       return isNaN(d.getTime()) ? new Date() : new Date(d.getFullYear(), d.getMonth(), d.getDate());
     }
 
-    // 日付を綺麗な「YYYY-MM-DD」形式の文字列に変換する関数
     function formatDateToStandard(val) {
       const d = parseDateSafe(val);
       const y = d.getFullYear();
@@ -160,9 +162,9 @@
 
       window.handleGasResponse = function(cloudData) {
         if (Array.isArray(cloudData)) {
-          // クラウドから届いたデータの日付も標準形式に整形
           events = cloudData.map(item => ({
             ...item,
+            id: item.id || generateId(),
             date: formatDateToStandard(item.date)
           }));
           localStorage.setItem('kuta_events', JSON.stringify(events));
@@ -296,7 +298,7 @@
         return;
       }
 
-      const id = 'ev_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+      const id = generateId();
       events.push({ id, title, date: formatDateToStandard(date), color, unitMode });
       localStorage.setItem('kuta_events', JSON.stringify(events));
 
@@ -325,7 +327,6 @@
       }
     }
 
-    // CSVエクスポート（ダウンロード）
     function exportCSV() {
       if (events.length === 0) {
         alert('エクスポートするデータがありません');
@@ -336,7 +337,6 @@
       const csvRows = [headers.join(',')];
 
       events.forEach(ev => {
-        // 出力時も確実に「YYYY-MM-DD」形式に整えて出力
         const safeDate = formatDateToStandard(ev.date);
         const row = [
           `"${(ev.id || '').replace(/"/g, '""')}"`,
@@ -359,7 +359,7 @@
       URL.revokeObjectURL(url);
     }
 
-    // CSVインポート（ファイル読み込み＆クラウド反映）
+    // CSVインポート（id空欄時の自動採番に対応）
     function importCSV(event) {
       const file = event.target.files[0];
       if (!file) return;
@@ -379,16 +379,24 @@
           const cols = lines[i].match(/(".*?"|[^",]+)(?=\s*,|\s*$)/g) || [];
           const cleanCols = cols.map(col => col.replace(/^"|"$/g, '').replace(/""/g, '"').trim());
 
-          if (cleanCols.length >= 3) {
-            // 入力された日付（2024/5/3、2024年5月3日など）を自動でYYYY-MM-DDに変換
-            const parsedDate = formatDateToStandard(cleanCols[2]);
+          // タイトルと日付が存在する行を対象とする
+          if (cleanCols.length >= 2) {
+            const rawId = cleanCols[0] ? cleanCols[0].trim() : '';
+            // idが空文字の場合は自動採番
+            const finalId = rawId !== '' ? rawId : generateId();
+            
+            const title = cleanCols[1] || '無題';
+            const dateStr = cleanCols[2] || '';
+            const parsedDate = formatDateToStandard(dateStr);
+            const color = cleanCols[3] || 'blue';
+            const unitMode = cleanCols[4] || 'days';
 
             newEvents.push({
-              id: cleanCols[0] || ('ev_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9)),
-              title: cleanCols[1] || '無題',
+              id: finalId,
+              title: title,
               date: parsedDate,
-              color: cleanCols[3] || 'blue',
-              unitMode: cleanCols[4] || 'days'
+              color: color,
+              unitMode: unitMode
             });
           }
         }
