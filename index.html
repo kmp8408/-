@@ -79,7 +79,6 @@
   <div class="list" id="itemList"></div>
 
   <script>
-    // ★ここに取得したGASのURLを貼り付けてください
     const GAS_API_URL = "https://script.google.com/macros/s/AKfycbyIpzEuH1_6Vv0JSk2lvYj_dn_-R2YDVeheRL3cHA3t_mGdu_vVqw4c1TnutY6HifRd8Q/exec";
 
     let events = JSON.parse(localStorage.getItem('kuta_events')) || [];
@@ -88,7 +87,16 @@
       document.getElementById('syncStatus').innerText = text;
     }
 
-// クラウドから最新データを取得（CORS制限を100%回避するJSONP方式）
+    function parseDateSafe(val) {
+      if (!val) return new Date();
+      if (typeof val === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(val)) {
+        const [y, m, d] = val.split('-').map(Number);
+        return new Date(y, m - 1, d);
+      }
+      const d = new Date(val);
+      return isNaN(d.getTime()) ? new Date() : new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    }
+
     function syncFromCloud() {
       if (!GAS_API_URL || GAS_API_URL.includes("ここに")) {
         setStatus("⚠️ GASのURLが未設定です（ローカル保存中）");
@@ -97,11 +105,9 @@
       }
       setStatus("🔄 クラウドと同期中...");
 
-      // 既存の古いタグがあれば削除
       const oldScript = document.getElementById('gas-jsonp');
       if (oldScript) oldScript.remove();
 
-      // グローバルコールバック関数の定義
       window.handleGasResponse = function(cloudData) {
         if (Array.isArray(cloudData)) {
           events = cloudData;
@@ -114,7 +120,6 @@
         }
       };
 
-      // scriptタグを動的に生成して通信（ブラウザのCORS遮断を回避）
       const script = document.createElement('script');
       script.id = 'gas-jsonp';
       script.src = `${GAS_API_URL}?callback=handleGasResponse&t=${Date.now()}`;
@@ -125,14 +130,13 @@
       document.body.appendChild(script);
     }
 
-    // クラウドへ最新データを送信（CORSエラーを完全に回避する設定）
     async function syncToCloud() {
       if (!GAS_API_URL || GAS_API_URL.includes("ここに")) return;
       setStatus("☁️ クラウドへ保存中...");
       try {
         await fetch(GAS_API_URL, {
           method: "POST",
-          mode: "no-cors", // ← Google側への送信を遮断させない必須設定
+          mode: "no-cors",
           headers: { "Content-Type": "text/plain" },
           body: JSON.stringify(events)
         });
@@ -178,16 +182,15 @@
       const sortType = document.getElementById('sortType').value;
 
       if (sortType === 'days-asc') {
-        displayEvents.sort((a, b) => new Date(a.date) - new Date(b.date));
+        displayEvents.sort((a, b) => parseDateSafe(a.date) - parseDateSafe(b.date));
       } else if (sortType === 'days-desc') {
-        displayEvents.sort((a, b) => new Date(b.date) - new Date(a.date));
+        displayEvents.sort((a, b) => parseDateSafe(b.date) - parseDateSafe(a.date));
       } else if (sortType === 'name-asc') {
         displayEvents.sort((a, b) => a.title.localeCompare(b.title, 'ja'));
       }
 
       displayEvents.forEach((ev) => {
-        const [y, m, d] = ev.date.split('-').map(Number);
-        const targetDate = new Date(y, m - 1, d);
+        const targetDate = parseDateSafe(ev.date);
         targetDate.setHours(0, 0, 0, 0);
 
         const diffDays = Math.round((targetDate - today) / (1000 * 60 * 60 * 24));
@@ -210,12 +213,14 @@
           }
         }
 
+        const displayDateStr = `${targetDate.getFullYear()}-${('0' + (targetDate.getMonth() + 1)).slice(-2)}-${('0' + targetDate.getDate()).slice(-2)}`;
+
         const div = document.createElement('div');
         div.className = `item item-color-${ev.color}`;
         div.innerHTML = `
           <div class="item-main">
             <div class="item-title">${ev.title}</div>
-            <div class="item-date">${ev.date}</div>
+            <div class="item-date">${displayDateStr}</div>
           </div>
           <div class="item-count ${diffClass}" title="タップで切り替え" onclick="toggleUnit('${ev.id}')">
             ${diffText}
@@ -266,7 +271,6 @@
       }
     }
 
-    // 初回読み込み時はまず端末データを描画し、すぐにクラウドから最新データを取得
     render();
     syncFromCloud();
   </script>
