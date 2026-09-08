@@ -112,7 +112,7 @@
       <div class="csv-actions">
         <button onclick="exportCSV()">📥 CSVダウンロード</button>
         <label for="csvFileInput">📤 CSV読み込み</label>
-        <input type="file" id="csvFileInput" accept=".csv" onchange="importCSV(event)">
+        <input type="file" id="csvFileInput" accept=".csv, text/csv, text/plain, application/vnd.ms-excel, text/comma-separated-values" onchange="importCSV(event)">
       </div>
       <p class="csv-note">
         ※新規行は <code>id</code> を空欄でOKです（自動採番）。<br>
