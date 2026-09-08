@@ -39,13 +39,18 @@
     .count-today { color: #28a745; }
     .del-btn { background: none; border: none; color: #aaa; font-size: 1.2rem; cursor: pointer; padding: 0 4px; line-height: 1; }
 
-    /* バックアップ・復元エリア */
-    .backup-box { background: #eee; padding: 10px; border-radius: 8px; font-size: 0.8rem; border: 1px solid #ccc; }
-    .backup-box summary { font-weight: bold; cursor: pointer; color: #555; }
-    .backup-content { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
-    textarea { width: 100%; height: 70px; font-family: monospace; font-size: 0.75rem; padding: 6px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
-    .btn-group { display: flex; gap: 6px; }
-    .btn-group button { flex: 1; background: #6c757d; color: #fff; border: none; padding: 6px; font-size: 0.8rem; border-radius: 4px; cursor: pointer; }
+    /* CSV管理エリア */
+    .backup-box { background: #eee; padding: 12px; border-radius: 8px; font-size: 0.85rem; border: 1px solid #ccc; }
+    .backup-box summary { font-weight: bold; cursor: pointer; color: #444; }
+    .backup-content { margin-top: 10px; display: flex; flex-direction: column; gap: 8px; }
+    .csv-actions { display: flex; gap: 8px; }
+    .csv-actions button, .csv-actions label {
+      flex: 1; background: #28a745; color: #fff; border: none; padding: 8px 12px; font-size: 0.85rem;
+      border-radius: 4px; cursor: pointer; text-align: center; box-sizing: border-box; font-weight: bold;
+    }
+    .csv-actions label { background: #17a2b8; display: inline-block; }
+    #csvFileInput { display: none; }
+    .csv-note { font-size: 0.75rem; color: #666; line-height: 1.4; margin: 0; }
   </style>
 </head>
 <body>
@@ -86,15 +91,19 @@
 
   <div class="list" id="itemList"></div>
 
-  <!-- データ管理（エクスポート／インポート） -->
+  <!-- CSV入出力エリア -->
   <details class="backup-box">
-    <summary>⚙️ データのバックアップ / パソコン編集</summary>
+    <summary>📊 Excel / CSV 入出力（パソコン編集）</summary>
     <div class="backup-content">
-      <textarea id="dataBox" placeholder="ここにデータが出力・入力されます"></textarea>
-      <div class="btn-group">
-        <button onclick="exportData()">書き出し (コピー)</button>
-        <button onclick="importData()">読み込み (クラウドへも反映)</button>
+      <div class="csv-actions">
+        <button onclick="exportCSV()">📥 CSVダウンロード</button>
+        <label for="csvFileInput">📤 CSV読み込み</label>
+        <input type="file" id="csvFileInput" accept=".csv" onchange="importCSV(event)">
       </div>
+      <p class="csv-note">
+        ※Excelで直接開いて編集・保存したCSVを取り込めます。<br>
+        ※列構成：<code>id, title, date, color, unitMode</code>（ヘッダー行含む）
+      </p>
     </div>
   </details>
 
@@ -291,44 +300,82 @@
       }
     }
 
-    // データのエクスポート（コピー）
-    function exportData() {
-      const text = JSON.stringify(events, null, 2);
-      document.getElementById('dataBox').value = text;
-      navigator.clipboard.writeText(text).then(() => {
-        alert('データをクリップボードにコピーしました！');
-      }).catch(() => {
-        alert('枠内にデータを出力しました。コピーしてご利用ください。');
-      });
-    }
-
-    // データのインポート（復元＆クラウド反映）
-    async function importData() {
-      const rawText = document.getElementById('dataBox').value.trim();
-      if (!rawText) {
-        alert('枠内にJSONデータが入力されていません');
+    // CSVエクスポート（ダウンロード）
+    function exportCSV() {
+      if (events.length === 0) {
+        alert('エクスポートするデータがありません');
         return;
       }
-      try {
-        const parsed = JSON.parse(rawText);
-        if (!Array.isArray(parsed)) throw new Error();
-        
-        parsed.forEach(ev => {
-          if (!ev.id) ev.id = 'ev_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-          if (!ev.unitMode) ev.unitMode = 'days';
-          if (!ev.color) ev.color = 'blue';
-        });
 
-        if (confirm(`現在のデータに上書きして ${parsed.length} 件のレコードを取り込みますか？\n（スプレッドシート側も更新されます）`)) {
-          events = parsed;
+      const headers = ['id', 'title', 'date', 'color', 'unitMode'];
+      const csvRows = [headers.join(',')];
+
+      events.forEach(ev => {
+        const row = [
+          `"${(ev.id || '').replace(/"/g, '""')}"`,
+          `"${(ev.title || '').replace(/"/g, '""')}"`,
+          `"${ev.date || ''}"`,
+          `"${ev.color || 'blue'}"`,
+          `"${ev.unitMode || 'days'}"`
+        ];
+        csvRows.push(row.join(','));
+      });
+
+      // Excel用 UTF-8 BOM (\uFEFF) を付与して文字化けを防止
+      const blob = new Blob(['\uFEFF' + csvRows.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `days_counter_${new Date().toISOString().slice(0,10)}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+
+    // CSVインポート（ファイル読み込み＆クラウド反映）
+    function importCSV(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = async function(e) {
+        const text = e.target.result;
+        const lines = text.split(/\r\n|\n|\r/).filter(line => line.trim() !== '');
+        
+        if (lines.length <= 1) {
+          alert('CSVファイルに有効なデータが含まれていません');
+          return;
+        }
+
+        const newEvents = [];
+        // 1行目はヘッダーなのでi=1から処理
+        for (let i = 1; i < lines.length; i++) {
+          // カンマ分割（ダブルクォーテーションを考慮した正規表現）
+          const cols = lines[i].match(/(".*?"|[^",]+)(?=\s*,|\s*$)/g) || [];
+          const cleanCols = cols.map(col => col.replace(/^"|"$/g, '').replace(/""/g, '"').trim());
+
+          if (cleanCols.length >= 3) {
+            newEvents.push({
+              id: cleanCols[0] || ('ev_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9)),
+              title: cleanCols[1] || '無題',
+              date: cleanCols[2] || '',
+              color: cleanCols[3] || 'blue',
+              unitMode: cleanCols[4] || 'days'
+            });
+          }
+        }
+
+        if (confirm(`現在のデータに上書きして ${newEvents.length} 件のレコードを取り込みますか？\n（Googleスプレッドシート側も更新されます）`)) {
+          events = newEvents;
           localStorage.setItem('kuta_events', JSON.stringify(events));
           render();
           await syncToCloud();
-          alert('インポートとクラウド同期が完了しました！');
+          alert('CSVのインポートとクラウド同期が完了しました！');
         }
-      } catch (e) {
-        alert('データの形式が正しくありません。正しいJSON形式のテキストを貼り付けてください。');
-      }
+        event.target.value = ''; // ファイル入力をリセット
+      };
+      reader.readAsText(file);
     }
 
     render();
