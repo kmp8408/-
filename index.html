@@ -101,7 +101,7 @@
         <input type="file" id="csvFileInput" accept=".csv" onchange="importCSV(event)">
       </div>
       <p class="csv-note">
-        ※Excelで直接開いて編集・保存したCSVを取り込めます。<br>
+        ※日付は <code>2024/5/3</code>、<code>2024-05-03</code>、<code>2024年5月3日</code> いずれの表記でも自動認識されます。<br>
         ※列構成：<code>id, title, date, color, unitMode</code>（ヘッダー行含む）
       </p>
     </div>
@@ -116,14 +116,35 @@
       document.getElementById('syncStatus').innerText = text;
     }
 
+    // 日本語（年月日）、スラッシュ（YYYY/M/D）、英語長文などをすべて標準のDateへ変換する関数
     function parseDateSafe(val) {
       if (!val) return new Date();
-      if (typeof val === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(val)) {
-        const [y, m, d] = val.split('-').map(Number);
-        return new Date(y, m - 1, d);
+
+      if (typeof val === 'string') {
+        let clean = val.trim();
+        // 「2024年5月3日」形式の処理
+        if (/^\d{4}年\d{1,2}月\d{1,2}日?$/.test(clean)) {
+          const parts = clean.replace(/日$/, '').split(/[年月]/).map(Number);
+          return new Date(parts[0], parts[1] - 1, parts[2]);
+        }
+        // 「2024/5/3」または「2024-5-3」形式の処理
+        if (/^\d{4}[\/\-]\d{1,2}[\/\-]\d{1,2}$/.test(clean)) {
+          const parts = clean.split(/[\/\-]/).map(Number);
+          return new Date(parts[0], parts[1] - 1, parts[2]);
+        }
       }
+
       const d = new Date(val);
       return isNaN(d.getTime()) ? new Date() : new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    }
+
+    // 日付を綺麗な「YYYY-MM-DD」形式の文字列に変換する関数
+    function formatDateToStandard(val) {
+      const d = parseDateSafe(val);
+      const y = d.getFullYear();
+      const m = ('0' + (d.getMonth() + 1)).slice(-2);
+      const day = ('0' + d.getDate()).slice(-2);
+      return `${y}-${m}-${day}`;
     }
 
     function syncFromCloud() {
@@ -139,7 +160,11 @@
 
       window.handleGasResponse = function(cloudData) {
         if (Array.isArray(cloudData)) {
-          events = cloudData;
+          // クラウドから届いたデータの日付も標準形式に整形
+          events = cloudData.map(item => ({
+            ...item,
+            date: formatDateToStandard(item.date)
+          }));
           localStorage.setItem('kuta_events', JSON.stringify(events));
           setStatus("✅ クラウド同期完了");
           render();
@@ -242,7 +267,7 @@
           }
         }
 
-        const displayDateStr = `${targetDate.getFullYear()}-${('0' + (targetDate.getMonth() + 1)).slice(-2)}-${('0' + targetDate.getDate()).slice(-2)}`;
+        const displayDateStr = formatDateToStandard(ev.date);
 
         const div = document.createElement('div');
         div.className = `item item-color-${ev.color}`;
@@ -272,7 +297,7 @@
       }
 
       const id = 'ev_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-      events.push({ id, title, date, color, unitMode });
+      events.push({ id, title, date: formatDateToStandard(date), color, unitMode });
       localStorage.setItem('kuta_events', JSON.stringify(events));
 
       document.getElementById('title').value = '';
@@ -311,17 +336,18 @@
       const csvRows = [headers.join(',')];
 
       events.forEach(ev => {
+        // 出力時も確実に「YYYY-MM-DD」形式に整えて出力
+        const safeDate = formatDateToStandard(ev.date);
         const row = [
           `"${(ev.id || '').replace(/"/g, '""')}"`,
           `"${(ev.title || '').replace(/"/g, '""')}"`,
-          `"${ev.date || ''}"`,
+          `"${safeDate}"`,
           `"${ev.color || 'blue'}"`,
           `"${ev.unitMode || 'days'}"`
         ];
         csvRows.push(row.join(','));
       });
 
-      // Excel用 UTF-8 BOM (\uFEFF) を付与して文字化けを防止
       const blob = new Blob(['\uFEFF' + csvRows.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -349,17 +375,18 @@
         }
 
         const newEvents = [];
-        // 1行目はヘッダーなのでi=1から処理
         for (let i = 1; i < lines.length; i++) {
-          // カンマ分割（ダブルクォーテーションを考慮した正規表現）
           const cols = lines[i].match(/(".*?"|[^",]+)(?=\s*,|\s*$)/g) || [];
           const cleanCols = cols.map(col => col.replace(/^"|"$/g, '').replace(/""/g, '"').trim());
 
           if (cleanCols.length >= 3) {
+            // 入力された日付（2024/5/3、2024年5月3日など）を自動でYYYY-MM-DDに変換
+            const parsedDate = formatDateToStandard(cleanCols[2]);
+
             newEvents.push({
               id: cleanCols[0] || ('ev_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9)),
               title: cleanCols[1] || '無題',
-              date: cleanCols[2] || '',
+              date: parsedDate,
               color: cleanCols[3] || 'blue',
               unitMode: cleanCols[4] || 'days'
             });
@@ -373,7 +400,7 @@
           await syncToCloud();
           alert('CSVのインポートとクラウド同期が完了しました！');
         }
-        event.target.value = ''; // ファイル入力をリセット
+        event.target.value = '';
       };
       reader.readAsText(file);
     }
