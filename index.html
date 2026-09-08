@@ -80,18 +80,15 @@
   </div>
 
   <!-- ソート選択エリア（今日から近い順／カラー順を追加） -->
-  <div class="sort-box">
-    <span class="sort-label">並び替え</span>
-    <select id="sortType" class="sort-select" onchange="render()">
+<select id="sortType" class="sort-select" onchange="render()">
       <option value="default">登録順</option>
       <option value="diff-asc">今日から近い順 (残り日数が少ない)</option>
       <option value="diff-desc">今日から遠い順 (残り日数が遠い)</option>
       <option value="date-asc">日付順 (過去 ➔ 未来)</option>
-      <option value="date-desc">日付順 (未来 ➔ 過去)</option>
+      <option value="date-desc" selected>日付順 (未来 ➔ 過去)</option>
       <option value="color-asc">カラー順 (青/赤/緑/橙/紫)</option>
       <option value="name-asc">イベント名順 (あ-ん)</option>
     </select>
-  </div>
 
   <div class="list" id="itemList"></div>
 
